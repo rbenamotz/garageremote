@@ -5,5 +5,4 @@
 #define SERVICE_COVER_OPEN "open_cover"
 
 int readState(String entityId);
-float readVolume(String entityId);
-void runService(String domain, String operation, String entityId);
+void changeCoverState(bool newState);
