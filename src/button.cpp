@@ -1,61 +1,60 @@
 #include <Arduino.h>
 #include "button.h"
 #include "user_config.h"
+#include "common.h"
+#include "ha.h"
 
-volatile unsigned long last_interrupt = 0;
-bool need_to_run_service = false;
+// volatile unsigned long last_interrupt = 0;
+bool needToToggleDoor = false;
 
-
-
-void handleButtonInterrupt() {
-  if (need_to_run_service) {
+void handleButtonInterrupt()
+{
+  static volatile unsigned long lastButtonDown = 0;
+  if (needToToggleDoor)
+  {
     return;
   }
-  if (millis() - last_interrupt <100) {
+  if (millis() - lastButtonDown < 100)
+  {
     //false alaram
     return;
   }
-  Serial.println("Button pushed");
-  need_to_run_service = true;
-  last_interrupt = millis();
+  needToToggleDoor = true;
+  lastButtonDown = millis();
+  // need_to_run_service = true;
 }
 
-
-
-void setupButton() {
+void setupButton()
+{
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), handleButtonInterrupt, FALLING);
 }
 
-void indicateError() {
-  for (int i=0; i<20; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(50);
-    digitalWrite(LED_PIN, LOW);
-    delay(50);
+void triggerToggleDoor()
+{
+  bool b = (globalDoorState != DOOR_STATE_OPEN);
+  globalDesiredDoorState = b ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
+  Serial.print("Button down. Door state is ");
+  Serial.print(globalDoorState);
+  Serial.print(" so toggling door to ");
+  Serial.print(b);
+  Serial.print(". New desired state is ");
+  Serial.println(globalDesiredDoorState);
+  changeCoverState(b);
+  globalReadStateDelay = DELAY_BETWEEN_READ_STATE_FAST;
+  needToToggleDoor = false;
+}
+
+void loopButton()
+{
+  if (needToToggleDoor)
+  {
+    triggerToggleDoor();
+    return;
   }
-}
-
-
-void indicateRunningService() {
-  for (int i=0; i<2; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(100);
-    digitalWrite(LED_PIN, LOW);
-    delay(100);
+  if (globalDesiredDoorState == globalDoorState)
+  {
+    globalDesiredDoorState = DOOR_STATE_ANY;
+    globalReadStateDelay = DELAY_BETWEEN_READ_STATE_NORMAL;
   }
-}
-
-void indicateWaitingForStateToChange() {
-  digitalWrite(LED_PIN, LOW);
-  delay(150);
-  digitalWrite(LED_PIN, HIGH);
-  delay(150);
-}
-
-void indicateWaitingForWiFi() {
-  digitalWrite(LED_PIN,1);
-  delay(10);
-  digitalWrite(LED_PIN,0);
-  delay(1000);
 }

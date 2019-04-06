@@ -5,59 +5,72 @@
 #include "user_config.h"
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
+#include "common.h"
 
-void preHttpClient(HTTPClient *http, const char *url)
+void prepHttpClient(HTTPClient *http, const char *url)
 {
   char authHeader[200];
   sprintf(authHeader, "Bearer %s", HA_AUTH_TOKEN);
-  Serial.print("Trying to connect to ");
-  Serial.println(url);
-  // WiFiClient client;
-  http->begin(url);
+  // Serial.print("Trying to connect to ");
+  // Serial.println(url);
+  static WiFiClient client;
+  http->begin(client, url);
   http->addHeader("Content-Type", "application/json");
   http->addHeader("Authorization", authHeader);
 }
 
-int readState(String entityId)
+void updateDoorState()
 {
   HTTPClient http;
   char url[200];
   sprintf(url, "%s/api/states/%s", HA_END_POINT, DOOR_ID);
-  preHttpClient(&http, url);
+  prepHttpClient(&http, url);
   int httpCode = http.GET();
   if (httpCode < 200 || httpCode >= 300)
   {
-    Serial.printf("Could not read state for %s. http code: %d\n", entityId.c_str(), httpCode);
+    Serial.printf("Could not read state for %s. http code: %d\n", DOOR_ID, httpCode);
     http.end();
-    return -1;
+    globalDoorState = DOOR_STATE_UNKNOWN;
   }
   const size_t bufferSize = JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(5) + JSON_OBJECT_SIZE(8) + 370;
   StaticJsonDocument<bufferSize> doc;
-
   DeserializationError error = deserializeJson(doc, http.getString());
-
-  // Test if parsing succeeds.
   if (error)
   {
     Serial.print(F("deserializeJson() failed: "));
     Serial.println(error.c_str());
-    return 0;
+    Serial.println(http.getString());
+    globalDoorState = DOOR_STATE_UNKNOWN;
   }
 
-  // JsonObject &root = jsonBuffer.parseObject(http.getString());
   String temp = doc["state"];
   http.end();
-  // Serial.printf("Read state for %s: %s\n",entityId.c_str(),temp.c_str());
-  if (temp == "on" || temp == "open")
+  globalDoorState = (temp == "on" || temp == "open") ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
+  Serial.printf("%d: Updated door state. New state is %d\n", millis(), globalDoorState);
+}
+
+void setupHa()
+{
+}
+void loopHa()
+{
+  static unsigned long lastStateCheck = 0lu;
+  if (!globalIsWifiConnected)
   {
-    return 1;
+    return;
   }
-  return 0;
+  unsigned long l = millis() - lastStateCheck;
+  unsigned long delay = (globalDoorState == DOOR_STATE_UNKNOWN) ? DELAY_BETWEEN_READ_STATE_FAST : globalReadStateDelay;
+  if (l < delay)
+  {
+    return;
+  }
+  updateDoorState();
+  lastStateCheck = millis();
 }
 
 void changeCoverState(bool newState)
 {
-  //POST http://home.benamotz.com:8123/api/services/cover/close_cover
   HTTPClient http;
   char url[200];
   if (newState)
@@ -68,9 +81,10 @@ void changeCoverState(bool newState)
   {
     sprintf(url, "%s/api/services/cover/close_cover", HA_END_POINT);
   }
-  preHttpClient(&http, url);
+  prepHttpClient(&http, url);
   char payLoad[200];
   sprintf(payLoad, "{\"entity_id\" : \"%s\"} ", DOOR_ID);
+  Serial.println(url);
   Serial.println(payLoad);
   int httpCode = http.POST(payLoad);
   http.POST(payLoad);
