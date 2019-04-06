@@ -6,3 +6,4 @@
 .piolibdeps
 test.http
 .vscode
+.DS_Store
