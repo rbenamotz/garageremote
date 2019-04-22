@@ -7,6 +7,7 @@ unsigned int ledFlashRate = 0;
 void setupLed()
 {
     pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, false);
 }
 
 void handleFlash()
@@ -31,12 +32,12 @@ void calcFlashRate()
 {
     if (!globalIsWifiConnected)
     {
-        ledFlashRate = 2000;
+        ledFlashRate = 250;
         return;
     }
     if (globalDesiredDoorState != DOOR_STATE_ANY && globalDoorState != DOOR_STATE_UNKNOWN && globalDesiredDoorState != globalDoorState)
     {
-        ledFlashRate = 100;
+        ledFlashRate = 50;
         return;
     }
     ledFlashRate = 0;
@@ -44,6 +45,7 @@ void calcFlashRate()
 
 void loopLed()
 {
+    static bool ledState = false;
     calcFlashRate();
     if (ledFlashRate > 0)
     {
@@ -51,5 +53,11 @@ void loopLed()
         return;
     }
     bool b = (globalDoorState == DOOR_STATE_CLOSED);
-    digitalWrite(LED_PIN, b);
+    if (b == ledState)
+    {
+        return;
+    }
+    ledState = b;
+    Serial.printf("Changing led state to %d\n",ledState);
+    digitalWrite(LED_PIN, ledState);
 }

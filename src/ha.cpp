@@ -11,6 +11,7 @@
 #define USE_SERIAL Serial
 
 WebSocketsClient webSocket;
+volatile bool needToFetchState = false;
 
 void handleSebSocketMessagee(const uint8_t *json)
 {
@@ -19,7 +20,7 @@ void handleSebSocketMessagee(const uint8_t *json)
   DynamicJsonDocument doc(capacity);
   deserializeJson(doc, json);
 
-  const char *type = doc["type"]; // "auth_required"
+  const char *type = doc["type"];
   // const char *ha_version = doc["ha_version"]; // "0.91.4"
   if (strcmp("auth_required", type) == 0)
   {
@@ -39,6 +40,17 @@ void handleSebSocketMessagee(const uint8_t *json)
     doc["type"] = "subscribe_events";
     doc["event_type"] = "state_changed";
     serializeJson(doc, outputMessage, 500);
+    webSocket.sendTXT(outputMessage);
+    return;
+  }
+  if (strcmp("result", type) == 0)
+  {
+    bool isSuccess = doc["success"];
+    if (isSuccess)
+    {
+      return;
+    }
+    USE_SERIAL.printf("Failed result: %s\n", json);
     webSocket.sendTXT(outputMessage);
     return;
   }
@@ -67,13 +79,13 @@ void handleSebSocketMessagee(const uint8_t *json)
       return;
     }
     const char *newState = eventData["state"];
-    bool b = (strcmp("open",newState) ==0) || (strcmp("on",newState) ==0);
-    globalDoorState =  b ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
-    USE_SERIAL.printf("%s changhed to %s. Global door state is %d\n", entityId, newState, globalDoorState);
+    bool b = (strcmp("open", newState) == 0) || (strcmp("on", newState) == 0);
+    globalDoorState = b ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
+    USE_SERIAL.printf("%s changed to %s. Global door state is %d\n", entityId, newState, globalDoorState);
     return;
   }
 
-  USE_SERIAL.printf("Unknow message: %s\n", json);
+  USE_SERIAL.printf("Unknow message of type \"%s\": %s\n", type, json);
 }
 
 void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
@@ -86,21 +98,15 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
     break;
   case WStype_CONNECTED:
     USE_SERIAL.printf("[WSc] Connected to url: %s\n", payload);
+    needToFetchState = true;
     // webSocket.sendTXT("Connected");
     break;
   case WStype_TEXT:
     handleSebSocketMessagee(payload);
-    // USE_SERIAL.printf("[WSc] get text: %s\n", payload);
-
-    // send message to server
-    // webSocket.sendTXT("message here");
     break;
   case WStype_BIN:
     USE_SERIAL.printf("[WSc] get binary length: %u\n", length);
     hexdump(payload, length);
-
-    // send data to server
-    // webSocket.sendBIN(payload, length);
     break;
   }
 }
@@ -117,8 +123,9 @@ void prepHttpClient(HTTPClient *http, const char *url)
   http->addHeader("Authorization", authHeader);
 }
 
-void fetchDoorStateViRest()
+void fetchDoorStateViaRESTApi()
 {
+  USE_SERIAL.println("Fetching door state via REST API");
   HTTPClient http;
   char url[200];
   sprintf(url, "%s/api/states/%s", HA_END_POINT, DOOR_ID);
@@ -144,7 +151,8 @@ void fetchDoorStateViRest()
   String temp = doc["state"];
   http.end();
   globalDoorState = (temp == "on" || temp == "open") ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
-  Serial.printf("%d: Updated door state. New state is %d\n", millis(), globalDoorState);
+  Serial.printf("Updated door state via HTTP . New state is %d\n", globalDoorState);
+  needToFetchState = false;
 }
 
 void setupHa()
@@ -164,12 +172,15 @@ void loopHa()
   if (!b)
   {
     b = true;
-    fetchDoorStateViRest();
+    needToFetchState = true;
     webSocket.begin(HA_WS_HOST, HA_WS_PORT, "/api/websocket");
     webSocket.onEvent(webSocketEvent);
     webSocket.setReconnectInterval(5000);
     webSocket.enableHeartbeat(15000, 3000, 2);
-    USE_SERIAL.printf("WebScoet client is now setup to %s:%d%s\n", HA_WS_HOST, HA_WS_PORT, "/api/websocket");
+    USE_SERIAL.printf("WebScoet client is now setup for %s:%d%s\n", HA_WS_HOST, HA_WS_PORT, "/api/websocket");
+  }
+  if (needToFetchState) {
+    fetchDoorStateViaRESTApi();
   }
   webSocket.loop();
   // static unsigned long lastStateCheck = 0lu;
@@ -202,10 +213,11 @@ void changeCoverState(bool newState)
   prepHttpClient(&http, url);
   char payLoad[200];
   sprintf(payLoad, "{\"entity_id\" : \"%s\"} ", DOOR_ID);
-  Serial.println(url);
-  Serial.println(payLoad);
   int httpCode = http.POST(payLoad);
   http.POST(payLoad);
-  Serial.printf("Result: %d\n", httpCode);
+  if (httpCode < 200 || httpCode >= 300)
+  {
+    Serial.printf("Failed to change cover state for entity id %s. status code: %d. Payload sent: %s\n", DOOR_ID, httpCode, payLoad);
+  }
   http.end();
 }
