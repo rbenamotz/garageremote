@@ -3,9 +3,10 @@
 #include "user_config.h"
 #include "common.h"
 #include "ha.h"
+#include "rfRemote.h"
 
 // volatile unsigned long last_interrupt = 0;
-bool needToToggleDoor = false;
+volatile bool needToToggleDoor = false;
 
 void handleButtonInterrupt()
 {
@@ -32,6 +33,12 @@ void setupButton()
 
 void triggerToggleDoor()
 {
+  needToToggleDoor = false;
+  if (!globalIsWifiConnected)
+  {
+    clickRfRemote();
+    return;
+  }
   bool b = (globalDoorState != DOOR_STATE_OPEN);
   globalDesiredDoorState = b ? DOOR_STATE_OPEN : DOOR_STATE_CLOSED;
   Serial.print("Button down. Door state is ");
@@ -42,7 +49,6 @@ void triggerToggleDoor()
   Serial.println(globalDesiredDoorState);
   changeCoverState(b);
   globalReadStateDelay = DELAY_BETWEEN_READ_STATE_FAST;
-  needToToggleDoor = false;
 }
 
 void loopButton()

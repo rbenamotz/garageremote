@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
-#include <ESP8266mDNS.h>
 #include "user_config.h"
 #include "common.h"
 
@@ -28,23 +27,13 @@ static void onStationModeGotIP(const WiFiEventStationModeGotIP &event)
     Serial.print(event.ip);
     Serial.print(", hostName=");
     Serial.println(WiFi.hostname());
-    if (MDNS.begin(HOST_NAME))
-    {
-        Serial.print("mDNS started for ");
-        Serial.print(HOST_NAME);
-        Serial.println(".local");
-    }
-    else
-    {
-        Serial.println("Could not stare mDNS");
-    }
-
     globalIsWifiConnected = true;
 }
 
 static void onStationModeDHCPTimeout()
 {
     Serial.println("WiFi DHCP timed out.");
+    globalIsWifiConnected = false;
 }
 
 void setupWifi()

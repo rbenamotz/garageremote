@@ -11,9 +11,14 @@ void setupLed()
 
 void handleFlash()
 {
-    static unsigned long lastChange = 0lu;
-    static bool b = true;
+    static unsigned long lastChange = millis();
+    static bool b = false;
     unsigned long l = millis() - lastChange;
+    // int gg = map(l,0,ledFlashRate,0,500);
+    // if (b) {
+    //     gg = 500 - gg;
+    // }
+    // analogWrite(LED_PIN,gg);
     if (l < ledFlashRate)
     {
         return;
@@ -26,7 +31,7 @@ void calcFlashRate()
 {
     if (!globalIsWifiConnected)
     {
-        ledFlashRate = 500;
+        ledFlashRate = 2000;
         return;
     }
     if (globalDesiredDoorState != DOOR_STATE_ANY && globalDoorState != DOOR_STATE_UNKNOWN && globalDesiredDoorState != globalDoorState)
@@ -45,6 +50,6 @@ void loopLed()
         handleFlash();
         return;
     }
-    bool b = (globalDoorState == DOOR_STATE_OPEN);
+    bool b = (globalDoorState == DOOR_STATE_CLOSED);
     digitalWrite(LED_PIN, b);
 }
